@@ -10,9 +10,9 @@ const userAuth = async (req, res, next) => {
         }
         const accessToken = authHeader.split(' ')[1];
         const decoded = jwt.verify(accessToken, ACCESS_TOKEN_KEY);
-        const user = await User.findOne({ _id: decoded.userId });
+        const user = await User.findOne({ _id: decoded.userId }).select('-password');
         if (!user) {
-            res.status(403).json({ error: 'User not Found' });
+           return res.status(403).json({ error: 'User not Found' });
         }
         req.user = user;
         next();

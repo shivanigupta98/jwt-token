@@ -6,6 +6,8 @@ const User = require('../models/user');
 const Token = require('../models/token');
 const ACCESS_TOKEN_KEY = process.env.ACCESS_TOKEN_KEY;
 const REFRESH_TOKEN_KEY = process.env.REFRESH_TOKEN_KEY;
+const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY;
+const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY
 
 authRouter.post('/signup', async (req, res) => {
     try {
@@ -20,7 +22,7 @@ authRouter.post('/signup', async (req, res) => {
         const hashPassword = await bcrypt.hash(password, 10);
         const user = new User({ username, password: hashPassword });
         await user.save();
-        res.json({ id: user._id, username: user.username });
+        res.status(201).json({ id: user._id, username: user.username });
     }
     catch (err) {
         res.status(500).json({ message: err.message });
@@ -41,8 +43,8 @@ authRouter.post('/login', async (req, res) => {
         if (!isvalid) {
             throw new Error('Password incorrect');
         }
-        const token = jwt.sign({ userId: user._id }, ACCESS_TOKEN_KEY, { expiresIn: '10m' });
-        const refreshToken = jwt.sign({ userId: user._id }, REFRESH_TOKEN_KEY, { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user._id }, ACCESS_TOKEN_KEY, { expiresIn: ACCESS_TOKEN_EXPIRY });
+        const refreshToken = jwt.sign({ userId: user._id }, REFRESH_TOKEN_KEY, { expiresIn: REFRESH_TOKEN_EXPIRY});
         const hashedToken = await bcrypt.hash(refreshToken, 10);
         const tokenDetails = new Token({ userId: user._id, refreshToken: hashedToken, revoked: false });
 
@@ -55,7 +57,7 @@ authRouter.post('/login', async (req, res) => {
         return res.json({ accessToken: token, user: { id: user._id, username: user.username } });
     }
     catch (err) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        res.status(400).json({ message: err.message });
     }
 }
 )
@@ -66,7 +68,6 @@ authRouter.post('/refresh', async (req, res) => {
             throw new Error('Refresh token not found');
         }
         const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_KEY);
-        console.log(decoded);
         const user = await User.findOne({ _id: decoded.userId });
         const dbToken = await Token.findOne({ userId: decoded.userId, revoked: false });
         if (!dbToken) {
@@ -76,11 +77,9 @@ authRouter.post('/refresh', async (req, res) => {
         if (!isTokenSame) {
             return res.status(403).json({ message: 'Invalid token' });
         }
-        dbToken.revoked = true;
-        await dbToken.save();
 
-        const newToken = jwt.sign({ userId: user._id }, ACCESS_TOKEN_KEY, { expiresIn: '10m' });
-        const newRefreshToken = jwt.sign({ userId: user._id }, REFRESH_TOKEN_KEY, { expiresIn: '7d' });
+        const newToken = jwt.sign({ userId: user._id }, ACCESS_TOKEN_KEY, { expiresIn: ACCESS_TOKEN_EXPIRY });
+        const newRefreshToken = jwt.sign({ userId: user._id }, REFRESH_TOKEN_KEY, { expiresIn: REFRESH_TOKEN_EXPIRY });
         const newHashed = await bcrypt.hash(newRefreshToken, 10);
         await Token.create({ userId: decoded.userId, refreshToken: newHashed });
         res.cookie('refreshToken', newRefreshToken, {
@@ -88,6 +87,8 @@ authRouter.post('/refresh', async (req, res) => {
             secure: true,
             sameSite: "none",
         })
+        dbToken.revoked = true;
+        await dbToken.save();
         res.json({ accessToken: newToken });
     }
     catch (err) {
